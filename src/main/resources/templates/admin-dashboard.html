@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Energy Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            color-scheme: light;
+            --primary: #4f46e5;
+            --secondary: #0ea5e9;
+            --accent: #22c55e;
+            --danger: #ef4444;
+            --surface: #f8fafc;
+            --surface-strong: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            font-family: "Inter", sans-serif;
+            background: var(--surface);
+            color: var(--text);
+        }
+        header {
+            padding: 24px 32px;
+            background: var(--surface-strong);
+            border-bottom: 1px solid var(--border);
+        }
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        header p {
+            margin: 6px 0 0 0;
+            color: var(--muted);
+        }
+        main {
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-end;
+            background: var(--surface-strong);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+        }
+        .filters label {
+            font-size: 13px;
+            color: var(--muted);
+            display: block;
+            margin-bottom: 6px;
+        }
+        .filters select {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            min-width: 180px;
+            background: #fff;
+        }
+        .filters button {
+            padding: 10px 20px;
+            border-radius: 10px;
+            border: none;
+            background: var(--primary);
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+        .card {
+            background: var(--surface-strong);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            padding: 18px;
+        }
+        .card h3 {
+            margin: 0 0 12px 0;
+            font-size: 16px;
+        }
+        .stat {
+            font-size: 22px;
+            font-weight: 600;
+        }
+        .muted {
+            color: var(--muted);
+        }
+        .alert {
+            background: #fee2e2;
+            border: 1px solid #fecaca;
+            padding: 12px;
+            border-radius: 12px;
+            color: #991b1b;
+        }
+        .charts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .empty {
+            text-align: center;
+            padding: 60px;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Energy Dashboard</h1>
+    <p>Monitor consumption, generation, and export trends.</p>
+</header>
+<main>
+    <div th:if="${emptyState}" class="card empty">
+        No users or energy data are available yet.
+    </div>
+
+    <div th:unless="${emptyState}" class="filters">
+        <form method="get" action="/admin/dashboard">
+            <div>
+                <label for="userId">User</label>
+                <select id="userId" name="userId">
+                    <option th:each="user : ${users}"
+                            th:value="${user.id}"
+                            th:text="${user.username} + ' (' + ${user.emailId} + ')'"
+                            th:selected="${user.id} == ${selectedUser.id}"></option>
+                </select>
+            </div>
+            <div>
+                <label for="month">Month</label>
+                <select id="month" name="month">
+                    <option th:each="m : ${#numbers.sequence(1,12)}"
+                            th:value="${m}"
+                            th:text="${T(java.time.Month).of(m).getDisplayName(T(java.time.format.TextStyle).FULL, T(java.util.Locale).ENGLISH)}"
+                            th:selected="${m} == ${selectedMonth}"></option>
+                </select>
+            </div>
+            <div>
+                <label for="year">Year</label>
+                <select id="year" name="year">
+                    <option th:each="y : ${#numbers.sequence(selectedYear - 2, selectedYear + 1)}"
+                            th:value="${y}"
+                            th:text="${y}"
+                            th:selected="${y} == ${selectedYear}"></option>
+                </select>
+            </div>
+            <button type="submit">Update</button>
+        </form>
+    </div>
+
+    <section th:unless="${emptyState}" class="grid">
+        <div class="card">
+            <h3>Weekly Averages</h3>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.weeklyAverageConsumption, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Consumption</div>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.weeklyAverageGeneration, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Generation</div>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.weeklyAverageExport, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Export to grid</div>
+        </div>
+        <div class="card">
+            <h3>Monthly Averages (<span th:text="${monthLabel}"></span>)</h3>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.monthlyAverageConsumption, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Consumption</div>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.monthlyAverageGeneration, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Generation</div>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.monthlyAverageExport, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Export to grid</div>
+        </div>
+        <div class="card">
+            <h3>Yearly Averages</h3>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.yearlyAverageConsumption, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Consumption</div>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.yearlyAverageGeneration, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Generation</div>
+            <div class="stat" th:text="${#numbers.formatDecimal(summary.yearlyAverageExport, 1, 2)} + ' kWh'">0 kWh</div>
+            <div class="muted">Export to grid</div>
+        </div>
+    </section>
+
+    <section th:unless="${emptyState}" class="grid">
+        <div class="card">
+            <h3>Minimum Daily Usage</h3>
+            <div class="muted">Consumption</div>
+            <div th:if="${minConsumption != null}">
+                <div class="stat" th:text="${#numbers.formatDecimal(minConsumption.consumptionKwh, 1, 2)} + ' kWh'">0 kWh</div>
+                <div class="muted" th:text="${minConsumption.date}"></div>
+            </div>
+            <div th:if="${minConsumption == null}" class="muted">No data</div>
+            <div class="muted" style="margin-top:12px;">Generation</div>
+            <div th:if="${minGeneration != null}">
+                <div class="stat" th:text="${#numbers.formatDecimal(minGeneration.generationKwh, 1, 2)} + ' kWh'">0 kWh</div>
+                <div class="muted" th:text="${minGeneration.date}"></div>
+            </div>
+            <div th:if="${minGeneration == null}" class="muted">No data</div>
+        </div>
+        <div class="card">
+            <h3>Maximum Daily Usage</h3>
+            <div class="muted">Consumption</div>
+            <div th:if="${maxConsumption != null}">
+                <div class="stat" th:text="${#numbers.formatDecimal(maxConsumption.consumptionKwh, 1, 2)} + ' kWh'">0 kWh</div>
+                <div class="muted" th:text="${maxConsumption.date}"></div>
+            </div>
+            <div th:if="${maxConsumption == null}" class="muted">No data</div>
+            <div class="muted" style="margin-top:12px;">Generation</div>
+            <div th:if="${maxGeneration != null}">
+                <div class="stat" th:text="${#numbers.formatDecimal(maxGeneration.generationKwh, 1, 2)} + ' kWh'">0 kWh</div>
+                <div class="muted" th:text="${maxGeneration.date}"></div>
+            </div>
+            <div th:if="${maxGeneration == null}" class="muted">No data</div>
+        </div>
+        <div class="card">
+            <h3>High Consumption Alerts</h3>
+            <div th:if="${alerts.isEmpty()}" class="muted">No alerts for selected month.</div>
+            <div th:each="alert : ${alerts}" class="alert" style="margin-bottom:10px;">
+                <strong th:text="${alert.date}"></strong>
+                <span th:text="' - ' + ${#numbers.formatDecimal(alert.consumptionKwh, 1, 2)} + ' kWh'"></span>
+            </div>
+        </div>
+    </section>
+
+    <section th:unless="${emptyState}" class="charts">
+        <div class="card">
+            <h3>Daily Usage - Consumption & Generation</h3>
+            <canvas id="usageChart" height="200"></canvas>
+        </div>
+        <div class="card">
+            <h3>Daily Export to Grid</h3>
+            <canvas id="exportChart" height="200"></canvas>
+        </div>
+    </section>
+
+    <section th:unless="${emptyState}" class="card">
+        <h3>Daily Usage Details</h3>
+        <table>
+            <thead>
+            <tr>
+                <th>Date</th>
+                <th>Consumption (kWh)</th>
+                <th>Generation (kWh)</th>
+                <th>Export (kWh)</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="daily : ${dailyUsage}">
+                <td th:text="${daily.date}"></td>
+                <td th:text="${#numbers.formatDecimal(daily.consumptionKwh, 1, 2)}"></td>
+                <td th:text="${#numbers.formatDecimal(daily.generationKwh, 1, 2)}"></td>
+                <td th:text="${#numbers.formatDecimal(daily.exportToGridKwh, 1, 2)}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+</main>
+
+<script th:if="${!emptyState}">
+    const labels = [[${dailyLabelsJson}]];
+    const consumption = [[${dailyConsumptionJson}]];
+    const generation = [[${dailyGenerationJson}]];
+    const exportData = [[${dailyExportJson}]];
+
+    const usageContext = document.getElementById('usageChart');
+    new Chart(usageContext, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Consumption (kWh)',
+                    data: consumption,
+                    borderColor: '#4f46e5',
+                    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                    tension: 0.3
+                },
+                {
+                    label: 'Generation (kWh)',
+                    data: generation,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    tension: 0.3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    const exportContext = document.getElementById('exportChart');
+    new Chart(exportContext, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Export to Grid (kWh)',
+                    data: exportData,
+                    backgroundColor: '#0ea5e9'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>
